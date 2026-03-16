@@ -1,0 +1,9 @@
+bs4
+click
+pycodestyle
+pydocstyle
+pylint
+mypy
+pytest
+pytest-mock
+pdbp
