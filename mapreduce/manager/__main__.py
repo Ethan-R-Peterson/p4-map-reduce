@@ -44,7 +44,7 @@ class Manager:
 
         LOGGER.info("Cleaned up tmpdir %s", tmpdir)
 
-    # ---------------- TCP SERVER ----------------
+
     def tcp_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -75,7 +75,7 @@ class Manager:
 
                 self.handle_message(msg)
 
-    # ---------------- MESSAGE HANDLING ----------------
+
     def handle_message(self, msg):
         t = msg.get("message_type")
 
@@ -88,7 +88,7 @@ class Manager:
         elif t == "finished":
             self.handle_task_finished(msg)
 
-    # ---------------- SHUTDOWN ----------------
+
     def handle_shutdown(self):
         LOGGER.info("Received shutdown")
 
@@ -99,7 +99,7 @@ class Manager:
 
         self.shutdown = True
 
-    # ---------------- REGISTER ----------------
+
     def handle_register(self, msg):
         host = msg["worker_host"]
         port = msg["worker_port"]
@@ -115,7 +115,7 @@ class Manager:
         self.send_tcp(host, port, {"message_type": "register_ack"})
         self.try_start_job()
 
-    # ---------------- JOB ----------------
+
     def handle_new_job(self, msg):
         msg["job_id"] = self.job_id
         self.job_id += 1
@@ -169,7 +169,7 @@ class Manager:
 
         self.assign_tasks()
 
-    # ---------------- ASSIGN ----------------
+
     def assign_tasks(self):
         for worker in self.workers.values():
             if worker["state"] == "ready" and self.pending_tasks:
@@ -179,7 +179,6 @@ class Manager:
                 worker["state"] = "busy"
                 worker["task"] = task
 
-    # ---------------- FINISH ----------------
     def handle_task_finished(self, msg):
         worker_key = (msg["worker_host"], msg["worker_port"])
         if worker_key in self.workers:
@@ -188,13 +187,12 @@ class Manager:
         self.tasks_finished += 1
 
         if self.tasks_finished == self.tasks_total:
-            # STOP here for now (no reduce yet needed for your tests)
             self.handle_shutdown()
             return
 
         self.assign_tasks()
 
-    # ---------------- NETWORK ----------------
+
     def send_tcp(self, host, port, message):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((host, port))
