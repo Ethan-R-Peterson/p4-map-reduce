@@ -1,1 +1,10 @@
-Manager:6000 [INFO] Starting manager host=localhost port=6000 pwd=/Users/ethanpeterson/Documents/class_projects/485_projects/p4-mapreduce
+Manager:6000 [INFO] Starting manager host=localhost port=6000 pwd=/home/hamzali/485/p4-mapreduce/p4-map-reduce
+Manager:6000 [INFO] Created tmpdir /tmp/mapreduce-shared-mgn_got7
+Manager:6000 [INFO] Listening on TCP port 6000
+Manager:6000 [INFO] Registered Worker (localhost, 6001)
+Manager:6000 [INFO] Registered Worker (localhost, 6002)
+Manager:6000 [INFO] Added job 0 to queue
+Manager:6000 [INFO] Running job 0
+Manager:6000 [INFO] Finished job 0
+Manager:6000 [INFO] Received shutdown
+Manager:6000 [INFO] Cleaned up tmpdir /tmp/mapreduce-shared-mgn_got7

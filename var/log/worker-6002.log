@@ -1,2 +1,3 @@
-Worker:6002 [INFO] Starting worker host=localhost port=6002 pwd=/Users/ethanpeterson/Documents/class_projects/485_projects/p4-mapreduce
-Worker:6002 [INFO] manager_host=localhost manager_port=6000
+Worker:6002 [INFO] Starting worker host=localhost port=6002 pwd=/home/hamzali/485/p4-mapreduce/p4-map-reduce
+Worker:6002 [INFO] Listening on TCP port 6002
+Worker:6002 [INFO] Connected to Manager
