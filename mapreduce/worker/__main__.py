@@ -10,7 +10,7 @@ import hashlib
 import click
 import heapq
 import shutil
-import contextlib
+import time
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ class Worker:
 
         self.register()
         tcp_thread.join()
+        if hasattr(self, "heartbeat_thread"):
+            self.heartbeat_thread.join()
 
     def tcp_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -71,11 +73,26 @@ class Worker:
             "worker_port": self.port,
         })
 
+    def heartbeat(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect((self.manager_host, self.manager_port))
+            while not self.shutdown:
+                message = {
+                    "message_type": "heartbeat",
+                    "worker_host": self.host,
+                    "worker_port": self.port,
+                }
+                sock.sendall(json.dumps(message).encode())
+                time.sleep(2)
+
     def handle_message(self, msg):
         t = msg.get("message_type")
 
         if t == "register_ack":
             LOGGER.info("Connected to Manager")
+            if not hasattr(self, "heartbeat_thread"):
+                self.heartbeat_thread = threading.Thread(target=self.heartbeat)
+                self.heartbeat_thread.start()
 
         elif t == "shutdown":
             LOGGER.info("Shutting down")

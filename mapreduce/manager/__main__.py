@@ -8,6 +8,7 @@ import socket
 import shutil
 from collections import OrderedDict
 import click
+import time
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,8 +40,14 @@ class Manager:
             self.tmpdir = tmpdir
 
             tcp_thread = threading.Thread(target=self.tcp_server)
+            udp_thread = threading.Thread(target=self.udp_server)
+            fault_thread = threading.Thread(target=self.fault_monitor)
             tcp_thread.start()
+            udp_thread.start()
+            fault_thread.start()
             tcp_thread.join()
+            udp_thread.join()
+            fault_thread.join()
 
         LOGGER.info("Cleaned up tmpdir %s", tmpdir)
 
@@ -75,6 +82,59 @@ class Manager:
 
                 self.handle_message(msg)
 
+    def handle_heartbeat(self, msg):
+        worker_key = (msg["worker_host"], msg["worker_port"])
+        if worker_key not in self.workers:
+            return
+        if self.workers[worker_key]["state"] != "dead":
+            self.workers[worker_key]["missed_pings"] = 0
+
+    def udp_server(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, self.port))
+            sock.settimeout(1)
+
+            while not self.shutdown:
+                try:
+                    dta = sock.recv(4096)
+                except socket.timeout:
+                    continue
+
+                try:
+                    msg = json.loads(dta.decode())
+                except json.JSONDecodeError:
+                    continue
+
+                if msg.get("message_type") == "heartbeat":
+                    self.handle_heartbeat(msg)
+
+
+    def mark_worker_dead(self, worker):
+        if worker["state"] == "dead":
+            return
+
+        worker["state"] = "dead"
+
+        if worker["task"] is not None:
+            self.pending_tasks.append(worker["task"])
+            worker["task"] = None
+
+        self.assign_tasks()
+
+
+    def fault_monitor(self):
+        while not self.shutdown:
+            time.sleep(2)
+            for worker in self.workers.values():
+                if worker["state"] == "dead":
+                    continue
+
+                worker["missed_pings"] += 1
+
+                if worker["missed_pings"] > 5:
+                    self.mark_worker_dead(worker)
+
 
     def handle_message(self, msg):
         t = msg.get("message_type")
@@ -93,9 +153,10 @@ class Manager:
         LOGGER.info("Received shutdown")
 
         for w in self.workers.values():
-            self.send_tcp(w["host"], w["port"], {
-                "message_type": "shutdown"
-            })
+            if w["state"] != "dead":
+                self.send_tcp(w["host"], w["port"], {
+                    "message_type": "shutdown"
+                })
 
         self.shutdown = True
 
@@ -109,7 +170,9 @@ class Manager:
         self.workers[(host, port)] = {
             "host": host,
             "port": port,
-            "state": "ready"
+            "state": "ready",
+            "task": None,
+            "missed_pings": 0,
         }
 
         self.send_tcp(host, port, {"message_type": "register_ack"})
@@ -174,10 +237,14 @@ class Manager:
         for worker in self.workers.values():
             if worker["state"] == "ready" and self.pending_tasks:
                 task = self.pending_tasks.pop(0)
-
-                self.send_tcp(worker["host"], worker["port"], task)
                 worker["state"] = "busy"
                 worker["task"] = task
+
+                success = self.send_tcp(worker["host"], worker["port"], task)
+                if not success:
+                    if worker["task"] is not None:
+                        self.pending_tasks.append(worker["task"])
+                        worker["task"] = None
     
     def start_reduce(self):
         job = self.current_job
@@ -203,7 +270,7 @@ class Manager:
 
     def handle_task_finished(self, msg):
         worker_key = (msg["worker_host"], msg["worker_port"])
-        if worker_key in self.workers:
+        if worker_key in self.workers and self.workers[worker_key]["state"] != "dead":
             self.workers[worker_key]["state"] = "ready"
             self.workers[worker_key]["task"] = None
 
@@ -221,9 +288,16 @@ class Manager:
 
 
     def send_tcp(self, host, port, message):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((host, port))
-            sock.sendall(json.dumps(message).encode())
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.connect((host, port))
+                sock.sendall(json.dumps(message).encode())
+            return True
+        except ConnectionRefusedError:
+            worker_key = (host, port)
+            if worker_key in self.workers:
+                self.mark_worker_dead(self.workers[worker_key])
+            return False
 
 
 @click.command()
