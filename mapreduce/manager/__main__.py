@@ -178,17 +178,44 @@ class Manager:
                 self.send_tcp(worker["host"], worker["port"], task)
                 worker["state"] = "busy"
                 worker["task"] = task
+    
+    def start_reduce(self):
+        job = self.current_job
+        num_reducers = job["num_reducers"]
+        self.pending_tasks = []
+        for task in range(num_reducers):
+            suffix = f"part{task:05d}"
+            input_paths = []
+            for filename in sorted(os.listdir(self.job_dir)):
+                if filename.endswith(suffix):
+                    input_paths.append(os.path.join(self.job_dir, filename))
+            self.pending_tasks.append({
+                "message_type": "new_reduce_task",
+                "task_id": task,
+                "executable": job["reducer_executable"],
+                "input_paths": input_paths,
+                "output_directory": job["output_directory"],
+            })
+        self.stage = "reduce"
+        self.tasks_total = len(self.pending_tasks)
+        self.tasks_finished = 0
+        self.assign_tasks()
 
     def handle_task_finished(self, msg):
         worker_key = (msg["worker_host"], msg["worker_port"])
         if worker_key in self.workers:
             self.workers[worker_key]["state"] = "ready"
+            self.workers[worker_key]["task"] = None
 
         self.tasks_finished += 1
 
         if self.tasks_finished == self.tasks_total:
-            self.handle_shutdown()
-            return
+            if self.stage == "map":
+                self.start_reduce()
+                return
+            if self.stage == "reduce":
+                self.handle_shutdown()
+                return
 
         self.assign_tasks()
 

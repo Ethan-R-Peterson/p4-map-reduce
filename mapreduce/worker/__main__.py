@@ -8,6 +8,9 @@ import tempfile
 import subprocess
 import hashlib
 import click
+import heapq
+import shutil
+import contextlib
 
 LOGGER = logging.getLogger(__name__)
 
@@ -82,8 +85,7 @@ class Worker:
             self.run_map_task(msg)
 
         elif t == "new_reduce_task":
-            # stub for now
-            self.finish_task(msg)
+            self.run_reduce_task(msg)
 
     def run_map_task(self, task):
         task_id = task["task_id"]
@@ -139,6 +141,41 @@ class Worker:
                 )
                 os.replace(src, dst)
 
+        self.send_tcp(self.manager_host, self.manager_port, {
+            "message_type": "finished",
+            "task_id": task_id,
+            "worker_host": self.host,
+            "worker_port": self.port,
+        })
+
+    def run_reduce_task(self, task):
+        task_id = task["task_id"]
+        with tempfile.TemporaryDirectory(
+            prefix=f"mapreduce-local-task{task_id:05d}-"
+        ) as tmpdir:
+            output_path = os.path.join(tmpdir, f"part-{task_id:05d}")
+            infiles = []
+            for path in task["input_paths"]:
+                infiles.append(open(path, "r"))
+            merged_input = heapq.merge(*infiles)
+            with open(output_path, "w") as outfile:
+                with subprocess.Popen(
+                    [task["executable"]],
+                    stdin=subprocess.PIPE,
+                    stdout=outfile,
+                    text=True,
+                ) as proc:
+                    for line in merged_input:
+                        proc.stdin.write(line)
+                    proc.stdin.close()
+                    proc.wait()
+            for f in infiles:
+                f.close()
+            final_output_path = os.path.join(
+                task["output_directory"],
+                f"part-{task_id:05d}"
+            )
+            shutil.move(output_path, final_output_path)
         self.send_tcp(self.manager_host, self.manager_port, {
             "message_type": "finished",
             "task_id": task_id,
